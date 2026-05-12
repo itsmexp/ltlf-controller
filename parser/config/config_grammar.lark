@@ -1,0 +1,13 @@
+start: list_line NEWLINE+ list_line NEWLINE+ rule_line (NEWLINE+ rule_line)* NEWLINE*
+
+list_line: "[" [name ("," name)*] "]"
+name: CNAME
+
+rule_line: RULE "."
+
+RULE: /[^\n.\[][^\n.]*/
+
+%import common.CNAME
+%import common.NEWLINE
+%import common.WS_INLINE
+%ignore WS_INLINE
