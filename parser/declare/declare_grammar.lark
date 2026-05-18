@@ -1,0 +1,14 @@
+?start: formula
+
+formula: TEMPLATE_NAME "(" args ")"
+args: arg ("," arg)*
+?arg: proposition | number
+
+proposition: /[a-zA-Z_][a-zA-Z0-9_]*/
+number: INT
+
+TEMPLATE_NAME: /[a-zA-Z-]+/
+
+%import common.INT
+%import common.WS
+%ignore WS

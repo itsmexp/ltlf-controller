@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from lark import Lark, Transformer, UnexpectedInput
+import logging
 
 GRAMMAR_PATH = Path(__file__).with_name("config_grammar.lark")
 CONFIG_GRAMMAR = GRAMMAR_PATH.read_text(encoding="utf-8")
@@ -52,8 +53,9 @@ def load_formula_from_file(filepath: str) -> Tuple[str, List[str], List[str]]:
 
     formula = " & ".join(rules)
 
-    print(f"[Config] Loaded {len(sensors)} sensors: {sensors}")
-    print(f"[Config] Loaded {len(actions)} actions: {actions}")
-    print(f"[Config] Loaded {len(rules)} rules, combined into formula.")
+    logger = logging.getLogger(__name__)
+    logger.info(f"Loaded {len(sensors)} sensors: {sensors}")
+    logger.info(f"Loaded {len(actions)} actions: {actions}")
+    logger.info(f"Loaded {len(rules)} rules, combined into formula.")
 
     return formula, sensors, actions
