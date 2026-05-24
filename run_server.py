@@ -3,14 +3,14 @@
 from flask import Flask, jsonify, request
 from typing import Optional
 
-from core.ltlf_controller import LTLfController
+from core.ltlf_controller import LTLController
 from parser.config.config_parser import load_formula_from_file
 
 # --- App Setup ---
 app = Flask(__name__)
 
 # Global state for the single LTLf controller
-GLOBAL_CONTROLLER: Optional[LTLfController] = None
+GLOBAL_CONTROLLER: Optional[LTLController] = None
 
 
 @app.route("/health", methods=["GET"])
@@ -37,7 +37,7 @@ def initialize():
             GLOBAL_CONTROLLER.close()
 
         formula, sensors, actions = load_formula_from_file(config_file)
-        GLOBAL_CONTROLLER = LTLfController(formula, sensors, actions)
+        GLOBAL_CONTROLLER = LTLController(formula, sensors, actions)
         
         print("Controller initialized")
         return jsonify({"status": "success", "message": "Controller initialized"}), 200

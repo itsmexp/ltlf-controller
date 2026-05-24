@@ -1,54 +1,53 @@
-from ltlf2dfa.parser.ltlf import LTLfParser
+from core.ltlf_controller import LTLController, build_ltl_reduced_dot, spot_formula_to_dot_source
 from parser.declare.declare_parser import declare2ltlf
-from parser.dot.dot_parser import parse_dot, prune_dot_model, render_dot_model
-from utils.graph_exporter import export_graph_to_pdf, export_controller_state_to_pdf
-from core.ltlf_controller import LTLfController
+from utils.graph_exporter import export_controller_state_to_pdf, export_graph_to_pdf
 
-
-def generate_png_from_formula(formula_str: str, output_filename: str = "automa"):
-    
-    # 1. Parsing dell'LTLf a DFA
-    parser = LTLfParser()
-    dfa_dot = parser(formula_str).to_dfa()
-
-    # 2. Lettura del modello DOT (senza pruning, così abbiamo l'automa base)
-    dot_model = parse_dot(dfa_dot)
-    
-    # 2.5. Pruning (riduzione) dell'automa e stampa
-    pruned_model = prune_dot_model(dot_model)
-    
-    # 3. Esporta il grafo tramite la utility (applica stile grafico e PNG)
-    export_graph_to_pdf(dot_model, output_filename + "_full")
-    export_graph_to_pdf(pruned_model, output_filename + "_reduced")
-
-
-    
 
 if __name__ == "__main__":
-    output_filename = "automa"
-    declare_formula = []
-    declare_formula.append("init(spawn)")
-    declare_formula.append("GF(raggiungi_a)")
-    declare_formula.append("GF(raggiungi_b)")
-    declare_formula.append("G!(raggiungi_a & raggiungi_b)")
-    declare_formula.append("G(last -> muori)")
+    formula = declare2ltlf([
+        "alternate-response(patrol_a, patrol_b)",
+        "alternate-precedence(wait, patrol_a)",
+        "alternate-precedence(wait, patrol_b)",
+        "alternate-response(patrol_b, patrol_a)",
+        "G(player_nearby -> (attack U !player_nearby))", 
+    ])
+
+    export_graph_to_pdf(spot_formula_to_dot_source(formula), "automa_full")
+    export_graph_to_pdf(build_ltl_reduced_dot(formula), "automa_reduced")
+
+    controller = LTLController(
+        formula,
+        ["player_nearby"],
+        ["patrol_a", "patrol_b", "wait", "attack"],
+    )
+
+    sensor_dict = {"player_nearby": False}
+    export_controller_state_to_pdf(controller, sensor_dict, "automa_state0")
+
+    valid_actions = controller.get_possible_action(sensor_dict)
+    print(valid_actions)
+
+    if valid_actions:
+        controller.choose_action(valid_actions[0])
+        export_controller_state_to_pdf(controller, sensor_dict, "automa_state1")
+
+    sensor_dict = {"player_nearby": False}
+    valid_actions = controller.get_possible_action(sensor_dict)
+    print(valid_actions)
+    if valid_actions:
+        controller.choose_action(valid_actions[0])
+        export_controller_state_to_pdf(controller, sensor_dict, "automa_state2")
+
+    sensor_dict = {"player_nearby": True}
+    valid_actions = controller.get_possible_action(sensor_dict)
+    print(valid_actions)
+    if valid_actions:
+        controller.choose_action(valid_actions[0])
+        export_controller_state_to_pdf(controller, sensor_dict, "automa_state3")
+
+    sensor_dict = {"player_nearby": False}
+    valid_actions = controller.get_possible_action(sensor_dict)
+    print(valid_actions)
 
 
-
-    
-    formula = declare2ltlf(declare_formula)
-    generate_png_from_formula(formula, output_filename)
-
-    sensor_vars = ["nemico_vicino", "muori"]
-    action_vars = ["raggiungi_a", "raggiungi_b", "spawn", "idle", "attacca"]
-    controller = LTLfController(formula, sensor_vars, action_vars)
-
-    sensor_dict = {"nemico_vicino": False, "muori": False}
-    export_controller_state_to_pdf(controller, sensor_dict, output_filename + "_state0")
-    controller.choose_action("spawn")
-
-    sensor_dict = {"nemico_vicino": True, "muori": False}
-    export_controller_state_to_pdf(controller, sensor_dict, output_filename + "_state1")
-    print(controller.get_possible_action(sensor_dict))
-
-   
+    controller.close()
