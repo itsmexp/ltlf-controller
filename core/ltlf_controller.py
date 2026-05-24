@@ -5,12 +5,9 @@ Class responsible for compiling and managing behavioral patterns
 through DFA conversion of LTLf expressions and partial extraction with BDDs.
 """
 
-from typing import List, Dict, Tuple, Optional, Any, Set
+from typing import Dict, List, Optional
 
-from dd.autoref import BDD
-from ltlf2dfa.parser.ltlf import LTLfParser
-
-from parser.dot.dot_parser import parse_dot, prune_dot_model
+from utils.ltlf_automaton import build_ltlf_controller_runtime
 
 
 class LTLfController:
@@ -36,25 +33,24 @@ class LTLfController:
         self.formula_str: str = formula_str
         self.sensor_vars: List[str] = sensor_vars
         self.action_vars: List[str] = action_vars
+        self._runtime = build_ltlf_controller_runtime(
+            formula_str, sensor_vars, action_vars
+        )
 
-        # 1. Build and prune DFA
-        parser = LTLfParser()
-        dfa_dot: str = parser(formula_str).to_dfa()
-        dot_model = parse_dot(dfa_dot)
-        pruned_dot_model = prune_dot_model(dot_model)
-        self.initial_state: Optional[str] = pruned_dot_model.init_target
+    @property
+    def initial_state(self) -> Optional[str]:
+        return self._runtime.initial_state
 
-        # 2. Setup BDD environment
-        self.bdd: BDD = BDD()
-        self.bdd.declare(*self.sensor_vars, *self.action_vars)
+    @property
+    def current_state(self) -> Optional[str]:
+        return self._runtime.current_state
 
-        # 3. Stateful runtime variables
-        self.transitions: Dict[str, List[Tuple[str, Any]]] = {}
-        self.current_state: Optional[str] = None
-        self.last_sensors: Dict[str, bool] = {}
+    @property
+    def all_states(self):
+        return self._runtime.all_states
 
-        # 4. Parse DOT model in memory to build transitions
-        self._parse_dot_to_graph(pruned_dot_model)
+    def visible_transitions(self, sensor_dict: Dict[str, bool]):
+        return self._runtime.visible_transitions(sensor_dict)
 
     def get_possible_action(self, sensor_dict: Dict[str, bool]) -> List[str]:
         """
@@ -64,22 +60,7 @@ class LTLfController:
         :param sensor_dict: Sensor map with current values (e.g. {"s1": True}).
         :return: List of strings (e.g. ["idle", "a1"]).
         """
-        self.last_sensors = sensor_dict
-        possible_moves: Set[str] = set()
-
-        if self.current_state not in self.transitions:
-            return []
-
-        for dst, label_bdd in self.transitions[self.current_state]:
-            partial_bdd = self.bdd.let(sensor_dict, label_bdd)
-
-            if partial_bdd != self.bdd.false:
-                # Iterate possible assignments for remaining action variables
-                for action_dict in self.bdd.pick_iter(partial_bdd, care_vars=self.action_vars):
-                    move_name = self._parse_move_name(action_dict)
-                    possible_moves.add(move_name)
-
-        return list(possible_moves)
+        return self._runtime.get_possible_action(sensor_dict)
 
     def choose_action(self, move_str: str) -> bool:
         """
@@ -88,63 +69,11 @@ class LTLfController:
         :param move_str: Move identifier string, joined by '+' (e.g. "a1+a2" or "idle").
         :return: True if move is allowed and the node advances, False otherwise.
         """
-        if self.current_state is None:
-            return False
-
-        # Rebuild action values from selected move string
-        action_dict = {act: False for act in self.action_vars}
-        if move_str != "idle":
-            for act in move_str.split("+"):
-                if act in self.action_vars:
-                    action_dict[act] = True
-
-        env = {**self.last_sensors, **action_dict}
-
-        for dst, label_bdd in self.transitions.get(self.current_state, []):
-            eval_bdd = self.bdd.let(env, label_bdd)
-            if eval_bdd == self.bdd.true:
-                self.current_state = dst
-                return True
-
-        self.current_state = None
-        return False
+        return self._runtime.choose_action(move_str)
 
     def close(self):
         """
         Force-clears internal BDD objects by deleting the transition map.
         Prevents leaking dangling nodes in memory after execution.
         """
-        self.transitions.clear()
-
-    # --- PRIVATE HELPER METHODS ---
-
-    def _parse_move_name(self, action_dict: Dict[str, bool]) -> str:
-        """
-        Converts an action dictionary to a user-friendly string,
-        including only True-valued actions joined by "+".
-        """
-        active = [act for act, val in action_dict.items() if val]
-        return "+".join(active) if active else "idle"
-
-    def _label_to_bdd(self, label: str) -> Any:
-        """
-        Loads a label string into a BDD, handling tautology keywords in advance.
-        """
-        if label == "true":
-            return self.bdd.true
-        if label == "false":
-            return self.bdd.false
-
-        return self.bdd.add_expr(label)
-
-    def _parse_dot_to_graph(self, dot_model: Any) -> None:
-        """
-        Populates self.transitions from the parsed DFA DOT model.
-        """
-        self.current_state = dot_model.init_target
-
-        for edge in dot_model.edges:
-            label = edge.attrs.get("label")
-            if label is None:
-                continue
-            self.transitions.setdefault(edge.src, []).append((edge.dst, self._label_to_bdd(label)))
+        self._runtime.close()

@@ -138,6 +138,21 @@ class DotTransformer(Transformer):
                 merged_attrs = {**default_edge_attrs, **attrs}
                 edges.append(DotEdge(src=src, dst=dst, attrs=merged_attrs))
 
+        # Calcola l'ordine canonico dei nodi (utile per mantenere coerenza
+        # di rinominazione tra grafi full/reduced/state).
+        all_node_ids = set(nodes.keys())
+        if init_target:
+            all_node_ids.add(init_target)
+        for e in edges:
+            if e.src != "init":
+                all_node_ids.add(e.src)
+            if e.dst != "init":
+                all_node_ids.add(e.dst)
+
+        if all_node_ids:
+            assignments = dict(assignments)
+            assignments["canonical_node_order"] = ",".join(sorted(all_node_ids))
+
         return DotModel(
             name=graph_name,
             assignments=assignments,
@@ -211,7 +226,7 @@ def prune_dot_model(model: DotModel) -> DotModel:
         init_target=model.init_target if model.init_target in good_states else None,
         nodes=pruned_nodes,
         edges=pruned_edges,
-        accepting_nodes=set(model.accepting_nodes) & good_states,
+        accepting_nodes=set(),  # Non è più necessario mantenere questa informazione dopo il pruning
     )
 
 
@@ -228,6 +243,7 @@ def render_dot_model(model: DotModel) -> str:
         lines.append(f"  {key} = {_format_attr_value(value)};")
 
     if model.init_target:
+        lines.append('  init [shape=point, label="", width=0.01, height=0.01];')
         lines.append(f"  init -> {model.init_target};")
 
     for node_id, node in model.nodes.items():
