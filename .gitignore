@@ -13,3 +13,4 @@ htmlcov/
 *.pdf
 *.txt
 !requirements.txt
+!ltl_config.txt

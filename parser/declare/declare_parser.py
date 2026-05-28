@@ -171,6 +171,13 @@ def _split_top_level(text: str, sep: str):
     return [chunk for chunk in chunks if chunk]
 
 
+def _wrap_formula(formula: str) -> str:
+    formula = formula.strip()
+    if formula.startswith("(") and formula.endswith(")"):
+        return formula
+    return f"({formula})"
+
+
 def declare2ltlf(declare_input):
     """
     Accepts either:
@@ -188,9 +195,9 @@ def declare2ltlf(declare_input):
     for p in parts:
         m = TEMPLATE_RE.match(p)
         if m and m.group(1).lower() in DECLARE_TEMPLATES:
-            out.append(declare2ltlf_formula(p))
+            out.append(_wrap_formula(declare2ltlf_formula(p)))
         else:
-            out.append(p)
+            out.append(_wrap_formula(p))
 
     return " & ".join(out)
 

@@ -1,0 +1,13 @@
+% example directive-based config
+#action: patrol_a, patrol_b, wait, attack.
+#sensor: player_nearby.
+
+#rule:
+alternate-response(patrol_a, patrol_b);
+alternate-precedence(wait, patrol_a);
+alternate-precedence(wait, patrol_b);
+alternate-response(patrol_b, patrol_a);
+G(player_nearby -> (attack U !player_nearby));
+G!(patrol_a & patrol_b);
+wait;
+G(!player_nearby -> X!attack).

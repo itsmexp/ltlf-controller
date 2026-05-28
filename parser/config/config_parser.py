@@ -1,61 +1,95 @@
-from pathlib import Path
+import re
 from typing import List, Tuple
 
-from lark import Lark, Transformer, UnexpectedInput
 import logging
 
-GRAMMAR_PATH = Path(__file__).with_name("config_grammar.lark")
-CONFIG_GRAMMAR = GRAMMAR_PATH.read_text(encoding="utf-8")
+from parser.declare.declare_parser import declare2ltlf
+
+DIRECTIVE_RE = re.compile(r"^\s*#\s*(action|sensor|rule)\s*:\s*(.*)$", re.IGNORECASE)
 
 
-class ConfigTransformer(Transformer):
-    def name(self, items):
-        return str(items[0])
-
-    def list_line(self, items):
-        return [str(item) for item in items]
-
-    def rule_line(self, items):
-        return str(items[0]).strip()
-
-    def start(self, items):
-        lists = [item for item in items if isinstance(item, list)]
-        rules = [
-            item.strip()
-            for item in items
-            if isinstance(item, str) and item.strip() and "." not in item
-        ]
-        if len(lists) < 2:
-            raise ValueError("Config must start with [sensors] and [actions] lines.")
-        sensors = lists[0]
-        actions = lists[1]
-        return sensors, actions, rules
+def _split_names(text: str) -> List[str]:
+    cleaned = text.strip().rstrip(".")
+    return [item.strip() for item in cleaned.split(",") if item.strip()]
 
 
-CONFIG_PARSER = Lark(CONFIG_GRAMMAR, start="start", parser="lalr")
+def _split_rules(text: str) -> List[str]:
+    cleaned = text.strip().rstrip(".")
+    return [item.strip() for item in cleaned.split(";") if item.strip()]
+
+
+def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
+    sections = {"action": [], "sensor": [], "rule": []}
+    current_section = None
+    buffer: List[str] = []
+
+    def flush() -> None:
+        nonlocal buffer
+        if current_section is None or not buffer:
+            buffer = []
+            return
+        sections[current_section].append(" ".join(buffer).strip())
+        buffer = []
+
+    for raw_line in content.splitlines():
+        stripped_line = raw_line.strip()
+        if not stripped_line or stripped_line.startswith("%"):
+            continue
+
+        directive_match = DIRECTIVE_RE.match(stripped_line)
+        if directive_match:
+            flush()
+            current_section = directive_match.group(1).lower()
+            remainder = directive_match.group(2).strip()
+            if remainder:
+                buffer.append(remainder)
+            continue
+
+        if current_section is None:
+            raise ValueError("Invalid config format. Add #action, #sensor and #rule directives.")
+
+        buffer.append(stripped_line)
+
+    flush()
+
+    actions = _split_names(" ".join(sections["action"]))
+    sensors = _split_names(" ".join(sections["sensor"]))
+    rules = _split_rules(" ".join(sections["rule"]))
+
+    if not actions:
+        raise ValueError("No actions found. Add at least one name in the #action directive.")
+    if not sensors:
+        raise ValueError("No sensors found. Add at least one name in the #sensor directive.")
+    if not rules:
+        raise ValueError("No rules found. Add at least one formula in the #rule directive.")
+
+    formula = declare2ltlf(rules)
+    return formula, sensors, actions
+
+
+def _has_directive_config(content: str) -> bool:
+    for raw_line in content.splitlines():
+        stripped_line = raw_line.strip()
+        if not stripped_line or stripped_line.startswith("%"):
+            continue
+        if DIRECTIVE_RE.match(stripped_line):
+            return True
+    return False
 
 
 def load_formula_from_file(filepath: str) -> Tuple[str, List[str], List[str]]:
     with open(filepath, "r", encoding="utf-8") as file_obj:
         content = file_obj.read()
-
-    try:
-        parse_tree = CONFIG_PARSER.parse(content)
-    except UnexpectedInput as exc:
+    if not _has_directive_config(content):
         raise ValueError(
-            f"Invalid config format at line {exc.line}, column {exc.column}."
-        ) from exc
+            "Invalid config format. Use only #action, #sensor and #rule directives."
+        )
 
-    sensors, actions, rules = ConfigTransformer().transform(parse_tree)
-
-    if not rules:
-        raise ValueError("No rules found. Add at least one LTLf rule ending with '.'.")
-
-    formula = " & ".join(rules)
+    formula, sensors, actions = _load_directive_config(content)
 
     logger = logging.getLogger(__name__)
     logger.info(f"Loaded {len(sensors)} sensors: {sensors}")
     logger.info(f"Loaded {len(actions)} actions: {actions}")
-    logger.info(f"Loaded {len(rules)} rules, combined into formula.")
+    logger.info("Loaded directive-based rules, combined into formula.")
 
     return formula, sensors, actions
