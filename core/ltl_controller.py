@@ -23,6 +23,12 @@ class LTLController:
         self._bdd.declare(*self._sensor_vars, *self._action_vars)
 
         self._initial_state, automaton_transitions, accepting_states = self._build_ltl_automaton(formula_str)
+        self._states: Set[str] = set(automaton_transitions.keys())
+        for edges in automaton_transitions.values():
+            for dst, _ in edges:
+                self._states.add(dst)
+        if self._initial_state is not None:
+            self._states.add(self._initial_state)
         self._accepting_states: Set[str] = set(accepting_states)
         self._transitions: Dict[str, List[Any]] = {}
         self._current_state: Optional[str] = self._initial_state
@@ -30,7 +36,9 @@ class LTLController:
 
         for source_state, edges in automaton_transitions.items():
             for dst, label in edges:
-                self._transitions.setdefault(source_state, []).append((dst, self._label_to_bdd(label)))
+                self._transitions.setdefault(source_state, []).append(
+                    (dst, self._label_to_bdd(label), label)
+                )
 
         self._prune_graph()
 
@@ -42,7 +50,7 @@ class LTLController:
         if self._current_state not in self._transitions:
             return []
 
-        for _, label_bdd in self._transitions[self._current_state]:
+        for _, label_bdd, _label_str in self._transitions[self._current_state]:
             partial_bdd = self._bdd.let(sensor_env, label_bdd)
             if partial_bdd == self._bdd.false:
                 continue
@@ -76,7 +84,7 @@ class LTLController:
 
         env = {**self._last_sensors, **action_dict}
 
-        for dst, label_bdd in self._transitions.get(self._current_state, []):
+        for dst, label_bdd, _label_str in self._transitions.get(self._current_state, []):
             if self._bdd.let(env, label_bdd) == self._bdd.true:
                 self._current_state = dst
                 return True
@@ -89,7 +97,34 @@ class LTLController:
         self._last_sensors.clear()
         self._current_state = None
         self._initial_state = None
+        self._states.clear()
         self._bdd = BDD()
+
+    def get_graph_dot(self) -> str:
+        states = sorted(self._states, key=str)
+        lines = ['digraph "" {', '  rankdir=LR', '  node [shape="circle"]']
+
+        if not states:
+            lines.append('}')
+            return "\n".join(lines)
+
+        lines.append('  init [label="", shape="point"]')
+
+        for state in states:
+            attrs = [f'label="{state}"']
+            lines.append(f'  {state} [{", ".join(attrs)}]')
+
+        if self._initial_state is not None:
+            lines.append(f'  init -> {self._initial_state}')
+
+        for source_state in sorted(self._transitions.keys(), key=str):
+            for dst, label_bdd, label_str in self._transitions[source_state]:
+                # use the original propositional formula string for labels
+                label = label_str
+                lines.append(f'  {source_state} -> {dst} [label="{label}"]')
+
+        lines.append('}')
+        return "\n".join(lines)
 
     def get_sensor_vars(self) -> List[str]:
         return list(self._sensor_vars)
@@ -100,31 +135,21 @@ class LTLController:
     def _normalize_sensor_input(self, sensor_dict: Dict[str, bool]) -> Dict[str, bool]:
         return {var: bool(sensor_dict.get(var, False)) for var in self._sensor_vars}
 
-    def _all_states(self) -> Set[str]:
-        states: Set[str] = set(self._transitions.keys())
-        for edges in self._transitions.values():
-            for dst, _ in edges:
-                states.add(dst)
-        if self._current_state is not None:
-            states.add(self._current_state)
-        if self._initial_state is not None:
-            states.add(self._initial_state)
-        return states
-
     def _prune_graph(self, aggressive: bool = False):
-        kept_states: Set[str] = self._all_states()
+        kept_states: Set[str] = set(self._states)
         if not kept_states:
             return
 
-        sink_states = {
-            state
-            for state in kept_states
-            if state not in self._accepting_states
-            and (
-                outgoing := self._transitions.get(state, [])
-            )
-            and all(dst == state and label_bdd == self._bdd.true for dst, label_bdd in outgoing)
-        }
+        sink_states = set()
+        for state in kept_states:
+            if state in self._accepting_states:
+                continue
+            outgoing = self._transitions.get(state, [])
+            if not outgoing:
+                continue
+            # outgoing entries are (dst, label_bdd, label_str)
+            if all(dst == state and label_bdd == self._bdd.true for dst, label_bdd, _ in outgoing):
+                sink_states.add(state)
 
         kept_states.difference_update(sink_states)
 
@@ -136,11 +161,13 @@ class LTLController:
             if source_state not in kept_states:
                 continue
 
-            filtered_edges = [(dst, label_bdd) for dst, label_bdd in edges if dst in kept_states]
+            filtered_edges = [(dst, label_bdd, label_str) for dst, label_bdd, label_str in edges if dst in kept_states]
             if filtered_edges:
                 pruned_transitions[source_state] = filtered_edges
 
         self._transitions = pruned_transitions
+        # keep states aligned with pruned transitions
+        self._states = kept_states
 
     def _prune_graph_aggressive(self, kept_states: Set[str]) -> Set[str]:
         while True:
@@ -150,7 +177,7 @@ class LTLController:
                 outgoing = self._transitions.get(state, [])
                 cover = self._bdd.false
 
-                for dst, label_bdd in outgoing:
+                for dst, label_bdd, _label_str in outgoing:
                     if dst not in kept_states:
                         continue
 
