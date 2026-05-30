@@ -179,13 +179,6 @@ def _wrap_formula(formula: str) -> str:
 
 
 def declare2ltlf(declare_input):
-    """
-    Accepts either:
-    - a list of rules, each being either a classic DECLARE template or an LTLf rule
-    - a single string with top-level '&' conjunctions among templates and/or LTLf rules
-
-    DECLARE templates are translated to LTLf; raw LTLf rules are passed through.
-    """
     if isinstance(declare_input, str):
         parts = _split_top_level(declare_input, "&")
     else:

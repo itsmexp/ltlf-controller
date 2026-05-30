@@ -4,3 +4,4 @@ dd
 graphviz
 lark
 flask
+networkx

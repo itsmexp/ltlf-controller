@@ -17,7 +17,3 @@ if __name__ == "__main__":
     print(actions)
     controller.choose_action("wait")
     actions = controller.get_possible_action(sensor_input)
-
-    
-
-
