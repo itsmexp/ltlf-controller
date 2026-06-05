@@ -13,7 +13,6 @@ if __name__ == "__main__":
     actions = controller.get_possible_action(sensor_input)
     print(actions)
     controller.choose_action("wait")
+    sensor_input = {"player_nearby": True}
     actions = controller.get_possible_action(sensor_input)
     print(actions)
-    controller.choose_action("wait")
-    actions = controller.get_possible_action(sensor_input)

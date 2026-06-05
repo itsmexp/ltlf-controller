@@ -1,13 +1,10 @@
-% example directive-based config
-#action: patrol_a, patrol_b, wait, attack.
+% example directive-based config (updated to use new DECLARE templates)
+#action: patrol_a, patrol_b, attack, wait.
 #sensor: player_nearby.
 
 #rule:
-alternate-response(patrol_a, patrol_b);
-alternate-precedence(wait, patrol_a);
-alternate-precedence(wait, patrol_b);
-alternate-response(patrol_b, patrol_a);
-G(player_nearby -> (attack U !player_nearby));
-G!(patrol_a & patrol_b);
-wait;
-G(!player_nearby -> X!attack).
+proactive_alternate(patrol_a, patrol_b);
+reactive_persistence_response(player_nearby, attack);
+proactive_chain(wait, patrol_a);
+proactive_chain(wait, patrol_b);
+proactive_step_exclusion(patrol_a, patrol_b, attack, wait).

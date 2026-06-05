@@ -1,25 +1,34 @@
+import re
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Set
 
 from dd.autoref import BDD
 import networkx as nx
-import spot
+
+from ltlf2dfa.parser.ltlf import LTLfParser
 
 from parser.config.config_parser import load_formula_from_file
+
+
+INIT_RE = re.compile(r"^\s*init\s*->\s*(\S+)\s*;\s*$")
+DOUBLECIRCLE_RE = re.compile(r"^\s*node\s+\[shape\s*=\s*doublecircle\];\s*(.*)$")
+EDGE_RE = re.compile(r'^\s*(\S+)\s*->\s*(\S+)\s*\[label="(.*)"\]\s*;\s*$')
 
 
 class LTLController:
     def __init__(self, config_file: str) -> None:
         formula_str, sensor_vars, action_vars = load_formula_from_file(config_file)
-
         self._formula_str: str = formula_str
-        self._sensor_vars: List[str] = sensor_vars
-        self._action_vars: List[str] = action_vars
+
+        self._sensor_vars: List[str] = [v for v in list(dict.fromkeys(sensor_vars)) if v.lower() != "last"]
+        self._action_vars: List[str] = [v for v in list(dict.fromkeys(action_vars)) if v.lower() != "last"]
+
         self._bdd: BDD = BDD()
+        self._bdd.configure(reordering=True)
         self._bdd.declare(*self._sensor_vars, *self._action_vars)
 
         self._graph = self._build_ltl_automaton(formula_str)
-        self._current_state: Optional[str] = self._graph.graph.get("initial")
+        self._current_state: str = self._graph.graph.get("initial", "")
         self._last_sensors: Dict[str, bool] = {}
 
         self._prune_graph()
@@ -29,11 +38,8 @@ class LTLController:
         self._last_sensors = sensor_env
         recommended_moves: Set[str] = set()
 
-        current_state = self._current_state
-        if current_state is None or current_state not in self._graph:
-            return []
 
-        for _, label_bdd, _label_str in self._iter_outgoing(current_state):
+        for _, label_bdd, _label_str in self._iter_outgoing(self._current_state):
             partial_bdd = self._bdd.let(sensor_env, label_bdd)
             if partial_bdd == self._bdd.false:
                 continue
@@ -56,34 +62,20 @@ class LTLController:
         return sorted(recommended_moves)
 
     def choose_action(self, move_str: str) -> bool:
-        current_state = self._current_state
-        if current_state is None:
-            return False
-
         action_dict = {act: False for act in self._action_vars}
         if move_str != "idle":
             for act in move_str.split("+"):
                 if act in self._action_vars:
                     action_dict[act] = True
 
-        last = self._last_sensors
-        env = {**last, **action_dict}
+        env = {**self._last_sensors, **action_dict}
 
-        for dst, label_bdd, _label_str in self._iter_outgoing(current_state):
+        for dst, label_bdd, _label_str in self._iter_outgoing(self._current_state):
             if self._bdd.let(env, label_bdd) == self._bdd.true:
                 self._current_state = dst
                 return True
 
-            self._current_state = None
         return False
-
-    def close(self):
-        self._graph.clear()
-        self._graph = nx.MultiDiGraph()
-        self._graph.graph["initial"] = None
-        self._bdd = BDD()
-        self._current_state = None
-        self._last_sensors = {}
 
     def get_graph_dot(self) -> str:
         states = sorted(self._graph.nodes(), key=str)
@@ -200,40 +192,71 @@ class LTLController:
         return outgoing
 
     def _label_to_bdd(self, label: str) -> Any:
-        if label in {"true", "1"}:
+        normalized = label.strip()
+        if normalized in {"true", "1"}:
             return self._bdd.true
-        if label in {"false", "0"}:
+        if normalized in {"false", "0"}:
             return self._bdd.false
-        return self._bdd.add_expr(label)
+        try:
+            return self._bdd.add_expr(normalized.replace("~", "!"))
+        except Exception as e:
+            raise ValueError(f"Failed to convert label to BDD: '{label}': {e}") from e
 
     def _build_ltl_automaton(self, formula_str: str):
-        automaton = spot.translate(spot.formula(formula_str), "Buchi", "Deterministic", "SBAcc")
-        init = str(automaton.get_init_state_number())
-        accepting_states: Set[str] = set()
-
         try:
-            num = automaton.num_states()
-            for s in range(num):
-                if automaton.state_is_accepting(s):
-                    accepting_states.add(str(s))
-        except Exception:
-            print("Warning: unable to determine accepting states from automaton, skipping dead-sink pruning")
+            formula = LTLfParser()(formula_str)
+            dot_source = formula.to_dfa()
+        except Exception as e:
+            raise RuntimeError(f"Failed to build LTL automaton from formula: {e}\nformula: {formula_str}") from e
 
         graph = nx.MultiDiGraph()
-        for edge in automaton.edges():
-            src = str(edge.src)
-            dst = str(edge.dst)
-            label = str(spot.bdd_to_formula(edge.cond, automaton.get_dict()))
-            graph.add_node(src, accepting=src in accepting_states)
-            graph.add_node(dst, accepting=dst in accepting_states)
-            graph.add_edge(
-                src,
-                dst,
-                label_bdd=self._label_to_bdd(label),
-                label_str=label,
-            )
+        accepting_states: Set[str] = set()
+        init: Optional[str] = None
 
-        if init is not None and init not in graph:
+        for raw_line in dot_source.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("digraph") or line in {"{", "}"}:
+                continue
+
+            init_match = INIT_RE.match(line)
+            if init_match:
+                init = init_match.group(1)
+                graph.add_node(init)
+                continue
+
+            doublecircle_match = DOUBLECIRCLE_RE.match(line)
+            if doublecircle_match:
+                for state in doublecircle_match.group(1).split(";"):
+                    state = state.strip()
+                    if state:
+                        accepting_states.add(state)
+                        graph.add_node(state, accepting=True)
+                continue
+
+            edge_match = EDGE_RE.match(line)
+            if edge_match:
+                src, dst, label = edge_match.groups()
+                graph.add_node(src, accepting=src in accepting_states)
+                graph.add_node(dst, accepting=dst in accepting_states)
+                try:
+                    label_bdd = self._label_to_bdd(label)
+                except Exception as e:
+                    raise ValueError(f"Error processing edge {src} -> {dst} with label '{label}': {e}") from e
+
+                graph.add_edge(
+                    src,
+                    dst,
+                    label_bdd=label_bdd,
+                    label_str=label,
+                )
+
+        for state in graph.nodes():
+            graph.nodes[state]["accepting"] = state in accepting_states
+
+        if init is None:
+            raise ValueError("Roma1 ltlf2dfa did not produce an initial state.")
+
+        if init not in graph:
             graph.add_node(init, accepting=init in accepting_states)
 
         graph.graph["initial"] = init

@@ -1,7 +1,7 @@
 # Target runtime: Python 3.12
-# Spot is provided by the system package python3-spot in the 3.12 environment.
+# Roma1 ltlf2dfa is installed from PyPI and uses MONA from the system.
 dd
 graphviz
 lark
-flask
 networkx
+ltlf2dfa

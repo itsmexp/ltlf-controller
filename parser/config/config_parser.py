@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import logging
 
-from parser.declare.declare_parser import declare2ltlf
+from parser.almanac.almanac_parser import almanac2ltlf
 
 DIRECTIVE_RE = re.compile(r"^\s*#\s*(action|sensor|rule)\s*:\s*(.*)$", re.IGNORECASE)
 
@@ -56,6 +56,23 @@ def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
     sensors = _split_names(" ".join(sections["sensor"]))
     rules = _split_rules(" ".join(sections["rule"]))
 
+    # normalize and deduplicate while preserving order
+    def _uniq_keep_order(items):
+        seen = set()
+        out = []
+        for it in items:
+            if it not in seen:
+                seen.add(it)
+                out.append(it)
+        return out
+
+    actions = _uniq_keep_order([a.strip() for a in actions])
+    sensors = _uniq_keep_order([s.strip() for s in sensors])
+
+    # 'last' is an internal LTLf atom and must not be a user action/sensor.
+    actions = [a for a in actions if a.lower() != "last"]
+    sensors = [s for s in sensors if s.lower() != "last"]
+
     if not actions:
         raise ValueError("No actions found. Add at least one name in the #action directive.")
     if not sensors:
@@ -63,7 +80,11 @@ def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
     if not rules:
         raise ValueError("No rules found. Add at least one formula in the #rule directive.")
 
-    formula = declare2ltlf(rules)
+    try:
+        formula = almanac2ltlf(rules)
+    except Exception as e:
+        raise ValueError(f"Failed to parse rules in config: {e}") from e
+
     return formula, sensors, actions
 
 
