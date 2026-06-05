@@ -7,4 +7,5 @@ proactive_alternate(patrol_a, patrol_b);
 reactive_persistence_response(player_nearby, attack);
 proactive_chain(wait, patrol_a);
 proactive_chain(wait, patrol_b);
+reactive_inhibition(!player_nearby, attack);
 proactive_step_exclusion(patrol_a, patrol_b, attack, wait).
