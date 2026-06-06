@@ -77,8 +77,9 @@ class AlmanacToLTLf(Transformer):
                 raise ValueError("proactive_exclusion expects at least 2 arguments")
             pairs = []
             for i in range(len(args)):
-                for j in range(i + 1, len(args)):
-                    pairs.append(f"!({args[i]} & {args[j]})")
+                for j in range(len(args)):
+                    if i != j:
+                        pairs.append(f"!({args[i]} & F({args[j]}))")
             inner = " & ".join(pairs)
             return f"G({inner})"
 
