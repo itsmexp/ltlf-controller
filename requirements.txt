@@ -1,5 +1,4 @@
-# Target runtime: Python 3.12
-# Roma1 ltlf2dfa is installed from PyPI and uses MONA from the system.
+# Target runtime: Python 3.12 
 dd
 graphviz
 lark
