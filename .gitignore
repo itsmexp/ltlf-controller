@@ -16,3 +16,4 @@ htmlcov/
 !requirements.txt
 !ltl_config.txt
 *.png
+!/case/*

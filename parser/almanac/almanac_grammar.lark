@@ -2,11 +2,20 @@
 
 formula: TEMPLATE_NAME "(" args ")"
 args: arg ("," arg)*
-?arg: proposition | number
+?arg: bool_expr | number
 
-proposition: /!?[a-zA-Z_][a-zA-Z0-9_]*/
+?bool_expr: bool_or
+?bool_or: bool_and
+        | bool_or "|" bool_and
+?bool_and: bool_unary
+         | bool_and "&" bool_unary
+?bool_unary: "!" bool_unary -> bool_neg
+           | proposition
+           | "(" bool_or ")"
+proposition: PROP
+
+PROP: /[a-zA-Z_][a-zA-Z0-9_]*/
 number: INT
-
 TEMPLATE_NAME: /[a-zA-Z0-9_-]+/
 
 %import common.INT

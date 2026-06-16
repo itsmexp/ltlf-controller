@@ -1,0 +1,14 @@
+#action: ew_g, ns_g.
+
+#sensor: ew_det, ns_det.
+
+#rule:
+G(((!ew_g & !ns_g) & X(ew_det)) -> X(ew_g));
+initial_state(!ew_g & !ns_g);
+G(((!ew_g & !ns_g) & X(ew_det | ns_det)) -> X(ew_g | ns_g));
+persistence_response(ew_det & ew_g, !ew_det, ew_g);
+persistence_response(ns_det & ns_g, !ns_det, ns_g);
+persistence_inhibition(!ew_det, ew_det, ew_g);
+persistence_inhibition(!ns_det, ns_det, ns_g);
+inhibition(ew_g, ns_g, 1);
+inhibition(ns_g, ew_g, 1).

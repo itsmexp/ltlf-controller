@@ -1,6 +1,0 @@
-# Target runtime: Python 3.12 
-dd
-graphviz
-lark
-networkx
-ltlf2dfa

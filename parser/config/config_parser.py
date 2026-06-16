@@ -10,12 +10,24 @@ DIRECTIVE_RE = re.compile(r"^\s*#\s*(action|sensor|rule)\s*:\s*(.*)$", re.IGNORE
 
 def _split_names(text: str) -> List[str]:
     cleaned = text.strip().rstrip(".")
-    return [item.strip() for item in cleaned.split(",") if item.strip()]
+    names = []
+    for item in cleaned.split(","):
+        name = item.strip()
+        if name:
+            names.append(name)
+
+    return names
 
 
 def _split_rules(text: str) -> List[str]:
     cleaned = text.strip().rstrip(".")
-    return [item.strip() for item in cleaned.split(";") if item.strip()]
+    rules = []
+    for item in cleaned.split(";"):
+        rule = item.strip()
+        if rule:
+            rules.append(rule)
+
+    return rules
 
 
 def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
@@ -56,22 +68,8 @@ def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
     sensors = _split_names(" ".join(sections["sensor"]))
     rules = _split_rules(" ".join(sections["rule"]))
 
-    # normalize and deduplicate while preserving order
-    def _uniq_keep_order(items):
-        seen = set()
-        out = []
-        for it in items:
-            if it not in seen:
-                seen.add(it)
-                out.append(it)
-        return out
-
-    actions = _uniq_keep_order([a.strip() for a in actions])
-    sensors = _uniq_keep_order([s.strip() for s in sensors])
-
-    # 'last' is an internal LTLf atom and must not be a user action/sensor.
-    actions = [a for a in actions if a.lower() != "last"]
-    sensors = [s for s in sensors if s.lower() != "last"]
+    actions = _normalize_names(actions)
+    sensors = _normalize_names(sensors)
 
     if not actions:
         raise ValueError("No actions found. Add at least one name in the #action directive.")
@@ -86,6 +84,25 @@ def _load_directive_config(content: str) -> Tuple[str, List[str], List[str]]:
         raise ValueError(f"Failed to parse rules in config: {e}") from e
 
     return formula, sensors, actions
+
+
+def _normalize_names(names: List[str]) -> List[str]:
+    normalized_names = []
+    seen_names = set()
+
+    for name in names:
+        stripped_name = name.strip()
+        if not stripped_name:
+            continue
+        if stripped_name.lower() == "last":
+            continue
+        if stripped_name in seen_names:
+            continue
+
+        seen_names.add(stripped_name)
+        normalized_names.append(stripped_name)
+
+    return normalized_names
 
 
 def _has_directive_config(content: str) -> bool:
