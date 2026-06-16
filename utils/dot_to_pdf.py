@@ -40,5 +40,5 @@ if __name__ == "__main__":
     with open("out.dot", "r") as f:
         dot_source = f.read()
 
-    print(convert_dot_to_png(dot_source, "semaphore_graph.png"))
+    print(convert_dot_to_png(dot_source, "out.png"))
 

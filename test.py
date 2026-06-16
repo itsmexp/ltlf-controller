@@ -4,23 +4,23 @@ import random
 import os
 
 if __name__ == "__main__":
-    controller = LTLfController(config_file="case/semaphore.txt", aggressive_pruning=True)
+    controller = LTLfController(config_file="case/guard.txt", aggressive_pruning=False)
     dot_graph = controller.get_graph_dot(acceptance_view=False)
     os.makedirs("out/dot", exist_ok=True)
     os.makedirs("out/png", exist_ok=True)
-    with open("out/dot/semaphore_graph.dot", "w") as f_graph:
+    with open("out/dot/guard_graph.dot", "w") as f_graph:
         f_graph.write(dot_graph)
-    convert_dot_to_png(dot_graph, "out/png/semaphore_graph.png")
+    convert_dot_to_png(dot_graph, "out/png/guard_graph.png")
     with open("out/step_actions.txt", "w") as f_actions:
         f_actions.write("")
         for i in range(10):
             dot_step_base = controller.get_step_dot(acceptance_view=False)
-            with open(f"out/dot/semaphore_graph_step_{i}.dot", "w") as f_step:
+            with open(f"out/dot/guard_graph_step_{i}.dot", "w") as f_step:
                 f_step.write(dot_step_base)
-            convert_dot_to_png(dot_step_base, f"out/png/semaphore_graph_step_{i}.png")
-            sensor_dict = {"ew_det": random.choice([True, False]), "ns_det": random.choice([True, False])}
+            convert_dot_to_png(dot_step_base, f"out/png/guard_graph_step_{i}.png")
+            sensor_dict = {"in_a": random.choice([True, False]), "in_b": random.choice([True, False]), "player_nearby": random.choice([True, False]), "low_hp": random.choice([True, False])}
             dot_step_pruned = controller.get_step_dot(sensor_dict, acceptance_view=False)
-            with open(f"out/dot/semaphore_graph_step_{i}_pruned.dot", "w") as f_step:
+            with open(f"out/dot/guard_graph_step_{i}_pruned.dot", "w") as f_step:
                 f_step.write(dot_step_pruned)
             convert_dot_to_png(dot_step_pruned, f"out/png/semaphore_graph_step_{i}_pruned.png")
             action = random.choice(controller.get_possible_action(sensor_dict))
