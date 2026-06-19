@@ -2,10 +2,11 @@
 #sensor: in_a, in_b, player_nearby, low_hp.
 
 #rule:
-persistence_inhibition(go_a, in_a, go_b | wait);
-persistence_inhibition(go_b, in_b, go_a | wait);
+persistence_inhibition(go_a, in_a, go_b);
+persistence_inhibition(go_b, in_b, go_a);
 persistence_response(go_a, in_a, go_a | heal | attack);
 persistence_response(go_b, in_b, go_b | heal | attack);
+step_exclusion(go_a, go_b, wait, attack, heal);
 inhibition(low_hp | !player_nearby, attack);
 inhibition(low_hp, wait);
 inhibition(!low_hp, heal);
