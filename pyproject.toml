@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ltlf-controller"
+version = "0.1.0"
+description = "LTLf Controller CLI"
+dependencies = [
+    "flask",
+    "networkx",
+    "dd",
+    "ltlf2dfa"
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+ltlf_controller = "ltlf_controller_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "parser*"]
+
+[tool.setuptools]
+py-modules = ["ltlf_controller_cli"]

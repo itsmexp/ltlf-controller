@@ -64,13 +64,11 @@ class LTLfController:
         self._current_state: str = self._graph.graph.get("initial", "")
         self._last_sensors: Dict[str, bool] = {}
         
-    def get_possible_action(self, sensor_dict: Dict[str, bool]) -> List[str]:
+    def get_possible_action_from_state(self, state: str, sensor_dict: Dict[str, bool]) -> List[str]:
         sensor_env = self._normalize_sensor_input(sensor_dict)
-        self._last_sensors = sensor_env
         recommended_moves: Set[str] = set()
 
-
-        for _, label_bdd, _label_str in self._iter_outgoing(self._current_state):
+        for _, label_bdd, _label_str in self._iter_outgoing(state):
             partial_bdd = self._bdd.let(sensor_env, label_bdd)
             if partial_bdd == self._bdd.false:
                 continue
@@ -104,7 +102,11 @@ class LTLfController:
         sorted_moves = sorted(recommended_moves)
         return sorted_moves
 
-    def choose_action(self, move_str: str) -> bool:
+    def get_possible_action(self, sensor_dict: Dict[str, bool]) -> List[str]:
+        self._last_sensors = self._normalize_sensor_input(sensor_dict)
+        return self.get_possible_action_from_state(self._current_state, sensor_dict)
+
+    def get_next_state(self, state: str, move_str: str, sensor_dict: Dict[str, bool]) -> Optional[str]:
         action_dict = {}
         for action_var in self._action_vars:
             action_dict[action_var] = False
@@ -115,17 +117,23 @@ class LTLfController:
                     action_dict[act] = True
 
         env = {}
-        env.update(self._last_sensors)
+        env.update(self._normalize_sensor_input(sensor_dict))
         env.update(action_dict)
 
-        for dst, label_bdd, _label_str in self._iter_outgoing(self._current_state):
+        for dst, label_bdd, _label_str in self._iter_outgoing(state):
             if self._bdd.let(env, label_bdd) == self._bdd.true:
-                self._current_state = dst
-                return True
+                return dst
 
+        return None
+
+    def choose_action(self, move_str: str) -> bool:
+        dst = self.get_next_state(self._current_state, move_str, self._last_sensors)
+        if dst is not None:
+            self._current_state = dst
+            return True
         return False
 
-    def get_graph_dot(self, acceptance_view: bool = False) -> str:
+    def get_graph_dot(self, acceptance_view: bool = False, show_transition_count: bool = False) -> str:
         states = list(self._graph.nodes())
         states = sorted(states, key=str)
         lines = ['digraph "" {', '  rankdir=LR', '  graph [dpi=300]', '  node [shape="circle", fixedsize=true, width=0.65, height=0.65]', '  edge [fontsize=10]']
@@ -148,11 +156,17 @@ class LTLfController:
 
         source_states = list(self._graph.nodes())
         source_states = sorted(source_states, key=str)
+        nvars = len(self._sensor_vars) + len(self._action_vars)
         for source_state in source_states:
             outgoing_edges = self._iter_outgoing(source_state)
             outgoing_edges = sorted(outgoing_edges, key=self._sort_outgoing_by_destination)
             for dst, _label_bdd, label in outgoing_edges:
-                lines.append(f'  {source_state} -> {dst} [label="{_humanize_label(label)}"]')
+                if show_transition_count:
+                    count = int(self._bdd.count(_label_bdd, nvars=nvars))
+                    label_to_show = str(count)
+                else:
+                    label_to_show = _humanize_label(label)
+                lines.append(f'  {source_state} -> {dst} [label="{label_to_show}"]')
 
         lines.append('}')
         return "\n".join(lines)
@@ -187,7 +201,7 @@ class LTLfController:
         return " ∨ ".join(f"({c})" for c in clauses)
 
 
-    def get_step_dot(self, sensor_dict: Optional[Dict[str, bool]] = None, acceptance_view: bool = False) -> str:
+    def get_step_dot(self, sensor_dict: Optional[Dict[str, bool]] = None, acceptance_view: bool = False, show_transition_count: bool = False) -> str:
         curr = self._current_state
         lines = ['digraph "" {', '  rankdir=LR', '  graph [dpi=300]', '  node [shape="circle", fixedsize=true, width=0.65, height=0.65]', 'edge [fontsize=10]']
 
@@ -200,15 +214,24 @@ class LTLfController:
         filtered_edges = []
         if sensor_dict is not None:
             sensor_env = self._normalize_sensor_input(sensor_dict)
+            nvars = len(self._action_vars)
             for dst, label_bdd, _label_str in outgoing_edges:
                 partial_bdd = self._bdd.let(sensor_env, label_bdd)
                 if partial_bdd == self._bdd.false:
                     continue
-                new_label = self._bdd_to_str(partial_bdd)
+                if show_transition_count:
+                    new_label = str(int(self._bdd.count(partial_bdd, nvars=nvars)))
+                else:
+                    new_label = self._bdd_to_str(partial_bdd)
                 filtered_edges.append((dst, partial_bdd, new_label))
         else:
+            nvars = len(self._sensor_vars) + len(self._action_vars)
             for dst, label_bdd, label_str in outgoing_edges:
-                filtered_edges.append((dst, label_bdd, label_str))
+                if show_transition_count:
+                    new_label = str(int(self._bdd.count(label_bdd, nvars=nvars)))
+                else:
+                    new_label = label_str
+                filtered_edges.append((dst, label_bdd, new_label))
 
         filtered_edges = sorted(filtered_edges, key=self._sort_outgoing_by_destination)
 
@@ -229,10 +252,101 @@ class LTLfController:
         lines.append(f'  current -> {curr}')
 
         for dst, _, label in filtered_edges:
-            lines.append(f'  {curr} -> {dst} [label="{_humanize_label(label)}"]')
+            if show_transition_count:
+                label_to_show = label
+            else:
+                label_to_show = _humanize_label(label)
+            lines.append(f'  {curr} -> {dst} [label="{label_to_show}"]')
 
         lines.append('}')
         return "\n".join(lines)
+
+    def _sensor_bdd_to_str(self, node: Any) -> str:
+        if node == self._bdd.true:
+            return "true"
+        if node == self._bdd.false:
+            return "false"
+
+        support_vars = [v for v in self._sensor_vars if v in self._bdd.support(node)]
+        if not support_vars:
+            return "true" if node == self._bdd.true else "false"
+
+        clauses = []
+        for assignment in self._bdd.pick_iter(node, care_vars=support_vars):
+            parts = []
+            for var in support_vars:
+                val = assignment.get(var)
+                if val is True:
+                    parts.append(var)
+                elif val is False:
+                    parts.append(f"~{var}")
+            clauses.append(" & ".join(parts))
+
+        if not clauses:
+            return "false"
+        if len(clauses) == 1:
+            return clauses[0]
+        return " | ".join(f"({c})" for c in clauses)
+
+    def get_mealy_graph_dot(self, acceptance_view: bool = False) -> str:
+        states = list(self._graph.nodes())
+        states = sorted(states, key=str)
+        lines = ['digraph "" {', '  rankdir=LR', '  graph [dpi=300]', '  node [shape="circle", fixedsize=true, width=0.65, height=0.65]', '  edge [fontsize=10]']
+
+        if not states:
+            lines.append('}')
+            return "\n".join(lines)
+
+        lines.append('  init [label="", shape="point", width=0.1, height=0.1]')
+
+        for state in states:
+            attrs = [f'label="{state}"']
+            if acceptance_view and self._graph.nodes[state].get("accepting", False):
+                attrs.append('shape="doublecircle"')
+            lines.append(f'  {state} [{", ".join(attrs)}]')
+
+        initial = self._graph.graph.get("initial")
+        if initial is not None:
+            lines.append(f'  init -> {initial}')
+
+        source_states = list(self._graph.nodes())
+        source_states = sorted(source_states, key=str)
+        for source_state in source_states:
+            outgoing_edges = self._iter_outgoing(source_state)
+            outgoing_edges = sorted(outgoing_edges, key=self._sort_outgoing_by_destination)
+            for dst, label_bdd, _label_str in outgoing_edges:
+                action_bdd = self._bdd.exist(self._sensor_vars, label_bdd)
+                action_assignments = list(self._bdd.pick_iter(action_bdd, care_vars=self._action_vars))
+                
+                seen_labels = set()
+                for act_assign in action_assignments:
+                    sensor_bdd = self._bdd.let(act_assign, label_bdd)
+                    if sensor_bdd == self._bdd.false:
+                        continue
+                    
+                    sensor_label = self._sensor_bdd_to_str(sensor_bdd)
+                    
+                    active_actions = []
+                    for a_var in self._action_vars:
+                        if act_assign.get(a_var) is True:
+                            active_actions.append(a_var)
+                    
+                    if active_actions:
+                        action_label = "+".join(active_actions)
+                    else:
+                        action_label = "idle"
+
+                    label_to_show = f"{sensor_label} / {action_label}"
+                    label_to_show = _humanize_label(label_to_show)
+                    seen_labels.add(label_to_show)
+                
+                for label_to_show in sorted(seen_labels):
+                    lines.append(f'  {source_state} -> {dst} [label="{label_to_show}"]')
+
+        lines.append('}')
+        return "\n".join(lines)
+
+
 
 
 

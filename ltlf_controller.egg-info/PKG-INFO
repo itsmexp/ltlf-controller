@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: ltlf-controller
+Version: 0.1.0
+Summary: LTLf Controller CLI
+Requires-Python: >=3.8
+Requires-Dist: flask
+Requires-Dist: networkx
+Requires-Dist: dd
+Requires-Dist: ltlf2dfa

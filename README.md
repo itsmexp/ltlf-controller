@@ -1,115 +1,125 @@
-# ltlController
+# ltlfController
 
-Prerequisites
-- Python 3.12
+A command-line tool for generating and serving LTLf (Linear Temporal Logic on Finite Traces) based controllers.
+
+## Prerequisites
+- Python 3.8+
 - `pip`
 - MONA
 
-Python environment setup
-```bash
-# create and activate a virtual environment using Python 3.12
-python3.12 -m venv .venv
-source .venv/bin/activate
-
-# update packaging tools and install project dependencies
-python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
-```
-
-MONA
+## MONA Installation
 
 Install via system package manager (Debian/Ubuntu):
 ```bash
 sudo apt update && sudo apt install mona
 ```
 
-
 Verify MONA installation:
 ```bash
 mona
 ```
 
-## REST API Server
+## Installation
 
-The project includes a REST API server to interact with the controller.
+Install the CLI tool locally using `pip`. We recommend using a virtual environment:
 
-### How to Run the Server
-
-To start the Flask development server on `http://127.0.0.1:5000`:
 ```bash
-.venv/bin/python app.py
+# create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# update packaging tools and install project dependencies
+pip install --upgrade pip setuptools wheel
+pip install -e .
 ```
 
-### Available Endpoints
-
-The API is session-based. The following endpoints are available:
-
-#### 1. `POST /initialize`
-Initializes a new controller session and returns a UUID to identify it. Accepts a JSON body:
-- `config` (string, optional): Raw configuration file content (e.g. from `case/semaphore.txt`).
-- `export` (string, optional): Raw GraphML XML content from a previous export.
-- `sensor_vars` (list of strings, optional): Required if initializing from an export.
-- `action_vars` (list of strings, optional): Required if initializing from an export.
-- `aggressive_pruning` (boolean, optional, default: `false`).
-- `prune` (boolean, optional, default: `true`).
-
-**Example Request:**
-```json
-{
-  "config": "#action: ew_g, ns_g.\n#sensor: ew_det, ns_det.\n#rule:\ninitial_state(!ew_g & !ns_g).",
-  "aggressive_pruning": false
-}
-```
-**Example Response:**
-```json
-{
-  "uuid": "b1a4f758-0240-4844-9823-675567d29b28"
-}
+Alternatively, you can install the CLI globally using `pipx`:
+```bash
+pipx install .
 ```
 
-#### 2. `POST /get_action`
-Given the sensor values and the session UUID, returns the selected action to be performed and advances the controller state. Accepts a JSON body:
-- `uuid` (string, required): The session UUID (can also be passed as query parameter `?uuid=...`).
-- `sensors` (dict, required): Map of sensor variable names to boolean values.
+## CLI Usage
 
-**Example Request:**
-```json
-{
-  "uuid": "b1a4f758-0240-4844-9823-675567d29b28",
-  "sensors": {
-    "ew_det": true,
-    "ns_det": false
-  }
-}
-```
-**Example Response:**
-```json
-{
-  "action": "idle",
-  "transitioned": true,
-  "current_state": "2"
-}
+The project is exposed via the `ltlf_controller` terminal command. 
+
+### `generate`
+Generates a controller from a configuration file and saves it locally as a portable `.ltlf` binary file.
+```bash
+ltlf_controller generate "case/guard.txt" --name "guard"
 ```
 
-#### 3. `GET /export/<uuid>`
-Returns the serialized GraphML representation of the controller. Can also pass UUID as query parameter `/export?uuid=<uuid>`.
+### `serve`
+Starts an interactive read-evaluate loop over standard input/output. This is designed for interacting with the controller in real-time or interfacing with other software.
 
-**Example Response:**
-```json
-{
-  "uuid": "b1a4f758-0240-4844-9823-675567d29b28",
-  "export": "<?xml version='1.0' encoding='utf-8'?>\n<graphml>...</graphml>"
-}
+```bash
+ltlf_controller serve
+```
+**Input Format:**
+The server expects lines formatted as:
+`name uuid sensor1, sensor2, sensor3`
+- `name`: The name of the generated controller.
+- `uuid`: A unique identifier for the instance. The engine efficiently loads the automaton graph once per `name` and tracks the state concurrently for different UUIDs.
+- `sensors`: A comma or space-separated list of active sensors. Any sensor not listed is considered `false`.
+
+**Output Format:**
+The server will respond with the chosen action for that UUID:
+`uuid action1 action2`
+If no action evaluates to true ("idle"), it will only return the `uuid`.
+
+To shut down the server, simply type `exit`.
+
+### `list`
+Lists all the generated controllers currently saved on your machine.
+```bash
+ltlf_controller list
 ```
 
-#### 4. `GET /close/<uuid>`
-Closes the controller session and removes it from the server memory. Can also pass UUID as query parameter `/close?uuid=<uuid>`.
+### `help`
+Shows detailed information about a generated controller, including its sensor variables, action variables, and the original rules used for generation.
+```bash
+ltlf_controller help "guard"
+```
 
-**Example Response:**
-```json
-{
-  "status": "closed",
-  "uuid": "b1a4f758-0240-4844-9823-675567d29b28"
-}
+### `delete`
+Deletes a saved controller.
+```bash
+ltlf_controller delete "guard"
 ```
+
+### `config`
+View or modify CLI configurations, such as the persistent directory where generated controllers are stored.
+
+To view the current storage directory:
+```bash
+ltlf_controller config
 ```
+
+To change the storage directory persistently:
+```bash
+ltlf_controller config --storage-dir /new/absolute/path/to/storage
+```
+*Note: Modifying this setting will not automatically move your existing controllers. You must move them manually.*
+
+### `info`
+Shows general project information (version, description, storage directory) and a list of all available commands.
+```bash
+ltlf_controller info
+```
+
+## Tools and Tests
+Graphic utilities (such as dot-to-pdf conversion) and test scripts are available in the `tools/` and `tests/` directories respectively.
+
+## Compiling the Executable (Windows)
+
+To build a standalone `.exe` that includes Python and `MONA`, follow these steps on a Windows machine:
+
+1. Install PyInstaller:
+   ```bash
+   pip install pyinstaller
+   ```
+2. Make sure you have downloaded `mona.exe` and `cygwin1.dll` and placed them in the root of the project directory.
+3. Run PyInstaller using the provided `.spec` file:
+   ```bash
+   python -m PyInstaller ltlf_controller.spec --clean -y
+   ```
+4. The generated standalone executable will be available in the `dist/` directory as `ltlf_controller.exe`. This executable will automatically extract its dependencies (including `mona.exe`) into a temporary folder when run.
