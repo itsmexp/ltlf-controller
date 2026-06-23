@@ -109,17 +109,7 @@ ltlf_controller info
 ## Tools and Tests
 Graphic utilities (such as dot-to-pdf conversion) and test scripts are available in the `tools/` and `tests/` directories respectively.
 
-## Compiling the Executable (Windows)
-
-To build a standalone `.exe` that includes Python and `MONA`, follow these steps on a Windows machine:
-
-1. Install PyInstaller:
-   ```bash
-   pip install pyinstaller
-   ```
-2. Make sure you have downloaded `mona.exe` and `cygwin1.dll` and placed them in the root of the project directory.
-3. Run PyInstaller using the provided `.spec` file:
-   ```bash
-   python -m PyInstaller ltlf_controller.spec --clean -y
-   ```
-4. The generated standalone executable will be available in the `dist/` directory as `ltlf_controller.exe`. This executable will automatically extract its dependencies (including `mona.exe`) into a temporary folder when run.
+## Build Guides
+For OS-specific compilation and deployment instructions, refer to the following guides:
+- **Windows**: [Windows Build Guide](build_windows/README_windows.md)
+- **Linux**: [Linux Build Guide](build_linux/README_linux.md)
