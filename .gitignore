@@ -17,3 +17,9 @@ htmlcov/
 !ltl_config.txt
 *.png
 !/case/*
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.egg-info/

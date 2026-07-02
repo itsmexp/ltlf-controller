@@ -253,13 +253,18 @@ def cmd_serve(args):
         uuid_states[uid] = next_state
 
         # Print output
-        # Output format: uuid action1 action2 action3
-        if chosen_action == "idle":
-            print(uid)
-        else:
-            # chosen_action is like "act1+act2"
-            actions = chosen_action.split("+")
-            print(f"{uid} {' '.join(actions)}")
+        # Output format: uuid action1 !action2 action3
+        all_action_vars = controller.get_action_vars()
+        active_actions = [] if chosen_action == "idle" else chosen_action.split("+")
+        
+        output_actions = []
+        for a in all_action_vars:
+            if a in active_actions:
+                output_actions.append(a)
+            else:
+                output_actions.append(f"!{a}")
+                
+        print(f"{uid} {' '.join(output_actions)}")
         
         # Flush stdout so output is immediately available to caller
         sys.stdout.flush()
